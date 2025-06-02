@@ -20,7 +20,7 @@ const AnswerGithubQueryInputSchema = z.object({
 export type AnswerGithubQueryInput = z.infer<typeof AnswerGithubQueryInputSchema>;
 
 const AnswerGithubQueryOutputSchema = z.object({
-  answer: z.string().describe('The LLM-generated answer to the query.'),
+  answer: z.string().describe('The LLM-generated answer to the query, formatted in Markdown.'),
   relevantLinks: z.array(z.string()).describe('An array of direct links to relevant commits, issues, or pull requests on GitHub.'),
 });
 export type AnswerGithubQueryOutput = z.infer<typeof AnswerGithubQueryOutputSchema>;
@@ -50,7 +50,15 @@ const prompt = ai.definePrompt({
   Answer the query to the best of your ability, providing a concise and informative answer.
   If the query is about commits, focus on commit data. If about issues, focus on issue data, and so on.
   Include direct links (URLs provided in the relevant data) to the relevant commits, issues, or pull requests on GitHub that support your answer.
-  If the relevant data is insufficient or not provided for the specific type of query (e.g., asking about issues but only commit data is available), state that you need more specific information or cannot answer based on the provided context.`,
+  If the relevant data is insufficient or not provided for the specific type of query (e.g., asking about issues but only commit data is available), state that you need more specific information or cannot answer based on the provided context.
+
+  FORMATTING INSTRUCTIONS:
+  - Structure your answer clearly using Markdown.
+  - If the answer has distinct sections (e.g., "Summary of Recent Activity", "Key Issues Found", "Relevant Pull Requests"), use Markdown headings (e.g., '## Summary' or '### Key Issues') to separate these sections.
+  - Use bullet points (\` - item \`) or numbered lists (\` 1. item \`) for lists of items.
+  - Ensure the entire answer is a single Markdown string.
+  - Do not use blockquotes for your main answer content. Use paragraphs and headings.
+  `,
 });
 
 const answerGithubQueryFlow = ai.defineFlow(
@@ -64,5 +72,3 @@ const answerGithubQueryFlow = ai.defineFlow(
     return output!;
   }
 );
-
-    

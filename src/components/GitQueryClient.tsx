@@ -2,13 +2,14 @@
 "use client";
 
 import React, { useState, useTransition, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse, getSuggestedQuestions } from "@/app/actions";
-import { parseRepositoryUrl, type ParsedRepositoryUrl } from "@/lib/repositoryUtils"; // Updated import
+import { parseRepositoryUrl, type ParsedRepositoryUrl } from "@/lib/repositoryUtils";
 import type { AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
 import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote } from "lucide-react";
 
@@ -190,7 +191,6 @@ export default function GitQueryClient() {
       
       setIsLoadingAI(true);
       try {
-        // Pass the original full repoUrl, as the AI prompt expects it.
         const aiResult = await getAIResponse(repoUrl, query, combinedRelevantData);
         if (aiResult.error) {
           setError(`AI processing error: ${aiResult.error}`);
@@ -338,10 +338,12 @@ export default function GitQueryClient() {
             <CardTitle className="font-headline text-2xl text-primary">GitProse Answer</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-base whitespace-pre-wrap leading-relaxed">{aiResponse.answer}</p>
+            <div className="prose prose-sm sm:prose-base lg:prose-lg dark:prose-invert max-w-none prose-headings:font-headline prose-headings:text-primary prose-a:text-accent hover:prose-a:text-accent/80">
+              <ReactMarkdown>{aiResponse.answer}</ReactMarkdown>
+            </div>
             {aiResponse.relevantLinks && aiResponse.relevantLinks.length > 0 && (
               <div>
-                <h3 className="font-headline text-lg font-semibold mb-2">Relevant Links:</h3>
+                <h3 className="font-headline text-lg font-semibold mb-2 mt-6">Relevant Links:</h3>
                 <ul className="space-y-1 list-inside">
                   {aiResponse.relevantLinks.map((link, index) => (
                     <li key={index} className="flex items-center">
