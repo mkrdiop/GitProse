@@ -108,3 +108,15 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom styles to ensure pre content wraps in prose */
+.prose pre {
+  overflow-x: visible; /* Override the default 'auto' which causes horizontal scroll */
+}
+
+.prose pre code {
+  display: block;          /* Ensure code block takes full width for wrapping */
+  white-space: pre-wrap;   /* Allow lines to wrap while preserving whitespace structure */
+  overflow-wrap: break-word; /* Break long words or strings to prevent overflow */
+  /* word-break: break-all; /* More aggressive alternative if break-word isn't enough */
+}
