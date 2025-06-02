@@ -3,11 +3,17 @@
 
 import { answerGithubQuery, type AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
 import { suggestRepoInsights, type SuggestRepoInsightsOutput } from "@/ai/flows/suggest-repo-insights";
+import { explainCommitDiff, type ExplainCommitDiffOutput } from "@/ai/flows/explain-commit-diff";
 
 const GITHUB_API_BASE_URL = "https://api.github.com";
 
 interface FetchDataResult {
-  dataString?: string; 
+  dataString?: string;
+  error?: string;
+}
+
+interface FetchDiffResult {
+  diff?: string;
   error?: string;
 }
 
@@ -80,23 +86,23 @@ export async function fetchCommitsForRepo(
   if (!owner || !repo) {
     return { error: "Owner and repository name are required for fetching commits." };
   }
-  const url = `${GITHUB_API_BASE_URL}/repos/${owner}/${repo}/commits?per_page=10`; 
+  const url = `${GITHUB_API_BASE_URL}/repos/${owner}/${repo}/commits?per_page=10`;
 
   try {
     const commitsData: any[] = await fetchDataFromGitHub(url, "commits");
-    
+
     const simplifiedCommits: SimplifiedCommitInfo[] = commitsData.map(commit => ({
       sha: commit.sha,
-      message: commit.commit.message.split('\n')[0], 
+      message: commit.commit.message.split('\n')[0],
       author: commit.commit.author?.name || commit.author?.login || 'Unknown',
       date: commit.commit.author?.date || null,
       url: commit.html_url,
     }));
 
-    const commitContextString = simplifiedCommits.map(c => 
+    const commitContextString = simplifiedCommits.map(c =>
       `Commit SHA: ${c.sha.substring(0,7)}\nAuthor: ${c.author}\nDate: ${c.date ? new Date(c.date).toLocaleDateString() : 'N/A'}\nMessage: ${c.message}\nURL: ${c.url}\n---`
     ).join('\n\n');
-    
+
     return { dataString: commitContextString };
 
   } catch (error: any) {
@@ -182,7 +188,7 @@ interface GetAIResponseResult {
 export async function getAIResponse(
   repositoryUrl: string,
   query: string,
-  relevantData: string 
+  relevantData: string
 ): Promise<GetAIResponseResult> {
   if (!repositoryUrl || !query) {
     return { error: "Repository URL and query are required." };
@@ -192,13 +198,13 @@ export async function getAIResponse(
     const aiResponse = await answerGithubQuery({
       repositoryUrl,
       query,
-      relevantData, 
+      relevantData,
     });
     return { data: aiResponse };
   } catch (error) {
     console.error("Error getting AI response:", error);
-    const errorMessage = (typeof error === 'object' && error !== null && 'message' in error) 
-                         ? String((error as {message: string}).message) 
+    const errorMessage = (typeof error === 'object' && error !== null && 'message' in error)
+                         ? String((error as {message: string}).message)
                          : "An unexpected error occurred while processing your query with AI.";
     return { error: errorMessage };
   }
@@ -227,4 +233,79 @@ export async function getSuggestedQuestions(
     return { error: errorMessage };
   }
 }
-    
+
+export async function fetchCommitDiff(
+  owner: string,
+  repo: string,
+  sha: string
+): Promise<FetchDiffResult> {
+  if (!owner || !repo || !sha) {
+    return { error: "Owner, repository name, and commit SHA are required for fetching diff." };
+  }
+  const url = `${GITHUB_API_BASE_URL}/repos/${owner}/${repo}/commits/${sha}`;
+  const headers: HeadersInit = {
+    Accept: "application/vnd.github.diff", // Request diff format
+  };
+
+  if (process.env.GITHUB_PAT) {
+    headers["Authorization"] = `token ${process.env.GITHUB_PAT}`;
+  }
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      // Try to get a JSON error message if possible, otherwise use text
+      let errorResponseMessage = `Failed to fetch diff for commit ${sha}`;
+      try {
+        const errorData = await response.json();
+        errorResponseMessage = errorData.message || errorResponseMessage;
+      } catch (e) {
+        // If parsing JSON fails, it might be plain text error
+        const textError = await response.text();
+        errorResponseMessage = textError || errorResponseMessage;
+      }
+      throw new Error(`GitHub API error for diff (${response.status}): ${errorResponseMessage}`);
+    }
+    const diffContent = await response.text();
+    return { diff: diffContent };
+  } catch (error: any) {
+    console.error("Error fetching commit diff:", error);
+    return { error: error.message || "An unexpected error occurred while fetching commit diff." };
+  }
+}
+
+interface GetCommitDiffExplanationResult {
+  data?: ExplainCommitDiffOutput;
+  error?: string;
+}
+
+export async function getCommitDiffExplanation(
+  owner: string,
+  repo: string,
+  commitSha: string
+): Promise<GetCommitDiffExplanationResult> {
+  if (!owner || !repo || !commitSha) {
+    return { error: "Owner, repository, and commit SHA are required." };
+  }
+
+  try {
+    const diffResult = await fetchCommitDiff(owner, repo, commitSha);
+    if (diffResult.error || !diffResult.diff) {
+      return { error: diffResult.error || "Could not fetch diff content." };
+    }
+
+    const aiResponse = await explainCommitDiff({
+      ownerName: owner,
+      repoName: repo,
+      commitSha: commitSha,
+      diffContent: diffResult.diff,
+    });
+    return { data: aiResponse };
+  } catch (error) {
+    console.error("Error getting commit diff explanation:", error);
+    const errorMessage = (typeof error === 'object' && error !== null && 'message' in error)
+                         ? String((error as {message: string}).message)
+                         : "An unexpected error occurred while explaining the commit diff.";
+    return { error: errorMessage };
+  }
+}

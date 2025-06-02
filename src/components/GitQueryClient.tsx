@@ -8,9 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse, getSuggestedQuestions } from "@/app/actions";
+import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse, getSuggestedQuestions, getCommitDiffExplanation } from "@/app/actions";
 import { parseRepositoryUrl, type ParsedRepositoryUrl } from "@/lib/repositoryUtils";
 import type { AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
+import type { ExplainCommitDiffOutput } from "@/ai/flows/explain-commit-diff";
 import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote, HelpCircle } from "lucide-react";
 import NextLink from "next/link";
 
@@ -18,6 +19,7 @@ export default function GitQueryClient() {
   const [repoUrl, setRepoUrl] = useState<string>("");
   const [query, setQuery] = useState<string>("");
   const [aiResponse, setAiResponse] = useState<AnswerGithubQueryOutput | null>(null);
+  const [diffExplanation, setDiffExplanation] = useState<ExplainCommitDiffOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [loadingStatus, setLoadingStatus] = useState<string>("");
@@ -28,7 +30,7 @@ export default function GitQueryClient() {
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
 
   const [isPending, startTransition] = useTransition();
-  
+
   const resultCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export default function GitQueryClient() {
 
       setIsLoadingSuggestions(true);
       setSuggestionsError(null);
-      setSuggestedQuestions(null); 
+      setSuggestedQuestions(null);
 
       startTransition(async () => {
         const result = await getSuggestedQuestions(parsedUrl.owner!, parsedUrl.repo!);
@@ -66,7 +68,7 @@ export default function GitQueryClient() {
         } else if (result.data?.questions && result.data.questions.length > 0) {
           setSuggestedQuestions(result.data.questions);
         } else {
-          setSuggestedQuestions([]); 
+          setSuggestedQuestions([]);
         }
         setIsLoadingSuggestions(false);
       });
@@ -74,7 +76,7 @@ export default function GitQueryClient() {
 
     const debounceTimeout = setTimeout(() => {
       fetchSuggestions();
-    }, 500); 
+    }, 500);
 
     return () => clearTimeout(debounceTimeout);
   }, [repoUrl]);
@@ -84,6 +86,7 @@ export default function GitQueryClient() {
     event.preventDefault();
     setError(null);
     setAiResponse(null);
+    setDiffExplanation(null);
     setLoadingStatus("");
 
     if (!repoUrl.trim()) {
@@ -95,32 +98,63 @@ export default function GitQueryClient() {
       return;
     }
 
+    const parsedUrl: ParsedRepositoryUrl = parseRepositoryUrl(repoUrl);
+    if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo) {
+      setError(parsedUrl.error || "Invalid repository URL.");
+      return;
+    }
+
+    if (parsedUrl.source === 'gitlab') {
+      setError("GitLab URL recognized. Full GitLab support is under development. Currently, only GitHub repositories can be processed.");
+      setAiResponse(null);
+      setDiffExplanation(null);
+      return;
+    }
+
+    if (parsedUrl.source !== 'github') {
+      setError("Invalid repository URL or unsupported Git provider. Please use a GitHub URL.");
+      setAiResponse(null);
+      setDiffExplanation(null);
+      return;
+    }
+
+    const { owner, repo } = parsedUrl;
+
+    // Check for semantic diff query
+    const explainCommitRegex = /^explain commit\s+([0-9a-fA-F]{7,40})\s*$/i;
+    const explainMatch = query.trim().match(explainCommitRegex);
+
+    if (explainMatch) {
+      const commitSha = explainMatch[1];
+      console.log("GitProse Event: Semantic Diff Query Submitted", { commitSha, repository: repoUrl.trim() });
+      setIsLoadingAI(true);
+      startTransition(async () => {
+        try {
+          const explanationResult = await getCommitDiffExplanation(owner, repo, commitSha);
+          if (explanationResult.error) {
+            setError(`Error explaining commit diff: ${explanationResult.error}`);
+          } else {
+            setDiffExplanation(explanationResult.data || null);
+             setTimeout(() => {
+              resultCardRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+          }
+        } catch (e: any) {
+          setError(`Failed to get commit diff explanation: ${e.message}`);
+        }
+        setIsLoadingAI(false);
+      });
+      return; // End here for semantic diff query
+    }
+
+    // Regular query processing
     console.log("GitProse Event: Query Submitted", { query: query.trim(), repository: repoUrl.trim() });
 
     startTransition(async () => {
-      const parsedUrl: ParsedRepositoryUrl = parseRepositoryUrl(repoUrl);
-      if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo) {
-        setError(parsedUrl.error || "Invalid repository URL.");
-        return;
-      }
-
-      if (parsedUrl.source === 'gitlab') {
-        setError("GitLab URL recognized. Full GitLab support is under development. Currently, only GitHub repositories can be processed.");
-        setAiResponse(null);
-        return;
-      }
-      
-      if (parsedUrl.source !== 'github') {
-        setError("Invalid repository URL or unsupported Git provider. Please use a GitHub URL.");
-        setAiResponse(null);
-        return;
-      }
-
-      const { owner, repo } = parsedUrl;
       let commitDataString: string | undefined;
       let issuesDataString: string | undefined;
       let prDataString: string | undefined;
-      
+
       setIsLoadingData(true);
 
       try {
@@ -191,7 +225,7 @@ export default function GitQueryClient() {
       if (combinedRelevantData.trim() === "") {
         combinedRelevantData = "No specific data (commits, issues, or pull requests) could be retrieved for the repository. The AI will attempt to answer based on general knowledge if possible.";
       }
-      
+
       setIsLoadingAI(true);
       try {
         const aiResult = await getAIResponse(repoUrl, query, combinedRelevantData);
@@ -237,7 +271,8 @@ export default function GitQueryClient() {
             Explore Repository
           </CardTitle>
           <CardDescription>
-            Enter a public GitHub or GitLab repository URL and ask about its history, issues, or pull requests.
+            Enter a public GitHub or GitLab repository URL and ask your question.
+            Try queries like "What are recent commit messages?", "Show open issues labeled 'bug'", or "explain commit &lt;sha&gt;".
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -253,6 +288,7 @@ export default function GitQueryClient() {
                 onChange={(e) => {
                   setRepoUrl(e.target.value);
                   setAiResponse(null);
+                  setDiffExplanation(null);
                   setError(null);
                 }}
                 placeholder="e.g., https://github.com/facebook/react or https://gitlab.com/gitlab-org/gitlab"
@@ -314,7 +350,7 @@ export default function GitQueryClient() {
                 id="query"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="e.g., What were the major features added last month? Who fixed bug #123? What are the oldest open issues? Show me recent PRs."
+                placeholder="e.g., What were the major features added last month? Who fixed bug #123? What are the oldest open issues? or explain commit a1b2c3d"
                 rows={4}
                 disabled={isLoading}
                 className="text-base"
@@ -375,6 +411,23 @@ export default function GitQueryClient() {
           </CardFooter>
         </Card>
       )}
+
+      {diffExplanation && (
+         <Card ref={resultCardRef} className="shadow-xl border-primary mt-8">
+           <CardHeader>
+             <CardTitle className="font-headline text-2xl text-primary">Commit Diff Explanation</CardTitle>
+           </CardHeader>
+           <CardContent>
+             <div className="prose prose-sm sm:prose-base lg:prose-lg dark:prose-invert max-w-none prose-headings:font-headline prose-headings:text-primary prose-a:text-accent hover:prose-a:text-accent/80">
+               <ReactMarkdown>{diffExplanation.explanation}</ReactMarkdown>
+             </div>
+           </CardContent>
+           <CardFooter>
+              <CardDescription>AI-generated explanation of the commit's functional impact.</CardDescription>
+           </CardFooter>
+         </Card>
+      )}
     </div>
   );
 }
+
