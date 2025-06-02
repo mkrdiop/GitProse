@@ -103,7 +103,7 @@ async function fetchDataFromGitLab(url: string, dataTypeName: string): Promise<a
         errorMessage += " Consider adding a GITLAB_PAT environment variable.";
       }
     }
-    console.error(`GitLab API error for ${dataTypeName} (${response.status}): ${errorData.message}`);
+    console.error(`GitLab API error for ${dataTypeName} (${response.status}): ${JSON.stringify(errorData)}`);
     throw new Error(errorMessage);
   }
   return response.json();
@@ -176,7 +176,7 @@ export async function fetchOpenIssuesForRepo(
     try {
       const issuesData: any[] = await fetchDataFromGitHub(url, "issues");
       const simplifiedIssues: SimplifiedIssueInfo[] = issuesData
-        .filter(issue => !issue.pull_request)
+        .filter(issue => !issue.pull_request) // Exclude pull requests from issues list
         .map(issue => ({
           number: issue.number,
           title: issue.title,
@@ -196,8 +196,8 @@ export async function fetchOpenIssuesForRepo(
     }
   } else if (source === 'gitlab') {
     const projectId = encodeURIComponent(`${owner}/${repo}`);
-    // GitLab API uses 'opened' for open issues
-    const url = `${GITLAB_API_BASE_URL}/projects/${projectId}/issues?state=opened&per_page=10&sort=created_at&order_by=desc`;
+    // GitLab API uses 'opened' for open issues. Corrected 'sort' and 'order_by'.
+    const url = `${GITLAB_API_BASE_URL}/projects/${projectId}/issues?state=opened&per_page=10&order_by=created_at&sort=desc`;
     try {
       const issuesData: any[] = await fetchDataFromGitLab(url, "issues");
       const simplifiedIssues: SimplifiedIssueInfo[] = issuesData.map(issue => ({
@@ -253,8 +253,8 @@ export async function fetchOpenPullRequestsForRepo( // For GitLab, this means Me
     }
   } else if (source === 'gitlab') {
     const projectId = encodeURIComponent(`${owner}/${repo}`);
-    // GitLab API uses 'opened' for open merge requests
-    const url = `${GITLAB_API_BASE_URL}/projects/${projectId}/merge_requests?state=opened&per_page=10&sort=created_at&order_by=desc`;
+    // GitLab API uses 'opened' for open merge requests. Corrected 'sort' and 'order_by'.
+    const url = `${GITLAB_API_BASE_URL}/projects/${projectId}/merge_requests?state=opened&per_page=10&order_by=created_at&sort=desc`;
     try {
       const mrsData: any[] = await fetchDataFromGitLab(url, "merge requests");
       const simplifiedMRs: SimplifiedPullRequestInfo[] = mrsData.map(mr => ({
@@ -266,8 +266,6 @@ export async function fetchOpenPullRequestsForRepo( // For GitLab, this means Me
         labels: mr.labels || [],
         url: mr.web_url,
       }));
-      // Note: Labeling as "MR" or "PR" in the context string for clarity to AI if the same prompt is used.
-      // For now, we'll keep "PR" for simplicity with the existing answerGithubQuery flow
       const mrsContextString = simplifiedMRs.map(m =>
         `PR #${m.number}: ${m.title}\nUser: ${m.user}\nState: ${m.state}\nCreated: ${m.createdAt ? new Date(m.createdAt).toLocaleDateString() : 'N/A'}\nLabels: ${m.labels.join(', ') || 'None'}\nURL: ${m.url}\n---`
       ).join('\n\n');
@@ -296,8 +294,6 @@ export async function getAIResponse(
   }
 
   try {
-    // The answerGithubQuery flow is used for both GitHub and GitLab for now.
-    // The relevantData string will contain "PRs" for GitHub and "MRs" (labeled as PRs) for GitLab.
     const aiResponse = await answerGithubQuery({
       repositoryUrl,
       query,
@@ -318,7 +314,6 @@ interface GetSuggestedQuestionsResult {
   error?: string;
 }
 
-// Suggests questions, currently only implemented effectively for GitHub repos
 export async function getSuggestedQuestions(
   owner: string,
   repo: string,
@@ -327,8 +322,6 @@ export async function getSuggestedQuestions(
   if (!owner || !repo) {
     return { error: "Owner/namespace and repository/project name are required for suggestions." };
   }
-  // For now, suggestions are primarily geared towards GitHub structure,
-  // but the AI flow itself is generic. We can call it for GitLab too.
   try {
     const suggestions = await suggestRepoInsights({ ownerName: owner, repoName: repo });
     return { data: suggestions };
@@ -374,7 +367,7 @@ export async function fetchCommitDiff(
   } else if (source === 'gitlab') {
     const projectId = encodeURIComponent(`${owner}/${repo}`);
     const url = `${GITLAB_API_BASE_URL}/projects/${projectId}/repository/commits/${sha}/diff`;
-    const headers: HeadersInit = { Accept: "application/json" }; // GitLab diffs are often part of a JSON response
+    const headers: HeadersInit = { Accept: "application/json" }; 
     if (process.env.GITLAB_PAT) {
       headers["PRIVATE-TOKEN"] = process.env.GITLAB_PAT;
     }
@@ -386,8 +379,6 @@ export async function fetchCommitDiff(
         catch (e) { const textError = await response.text(); errorResponseMessage = textError || errorResponseMessage; }
         throw new Error(`GitLab API error for diff (${response.status}): ${errorResponseMessage}`);
       }
-      // GitLab's diff endpoint returns an array of diff objects.
-      // We need to concatenate their 'diff' properties.
       const diffDataArray: any[] = await response.json();
       const diffContent = diffDataArray.map(d => d.diff).join('\n');
       return { diff: diffContent };
@@ -422,7 +413,7 @@ export async function getCommitDiffExplanation(
 
     const aiResponse = await explainCommitDiff({
       ownerName: owner,
-      repoName: repo, // For GitLab, repo includes the full path
+      repoName: repo, 
       commitSha: commitSha,
       diffContent: diffResult.diff,
     });
@@ -435,3 +426,5 @@ export async function getCommitDiffExplanation(
     return { error: errorMessage };
   }
 }
+
+    
