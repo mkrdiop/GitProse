@@ -263,7 +263,7 @@ export default function GitQueryClient() {
                       size="sm"
                       onClick={() => handleSuggestedQuestionClick(q)}
                       disabled={isLoading}
-                      className="text-xs"
+                      className="text-xs h-auto whitespace-normal text-left"
                     >
                       {q}
                     </Button>
