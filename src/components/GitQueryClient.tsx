@@ -1,16 +1,16 @@
 
 "use client";
 
-import React, { useState, useTransition, useRef } from "react";
+import React, { useState, useTransition, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse } from "@/app/actions";
+import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse, getSuggestedQuestions } from "@/app/actions";
 import { parseGitHubUrl, type ParsedGitHubUrl } from "@/lib/githubUtils";
 import type { AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
-import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, FileText, GitPullRequest, History } from "lucide-react";
+import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote } from "lucide-react";
 
 export default function GitQueryClient() {
   const [repoUrl, setRepoUrl] = useState<string>("");
@@ -21,9 +21,55 @@ export default function GitQueryClient() {
   const [loadingStatus, setLoadingStatus] = useState<string>("");
   const [isLoadingAI, setIsLoadingAI] = useState<boolean>(false);
 
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[] | null>(null);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState<boolean>(false);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+
   const [isPending, startTransition] = useTransition();
   
   const resultCardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (!repoUrl.trim()) {
+        setSuggestedQuestions(null);
+        setSuggestionsError(null);
+        return;
+      }
+
+      const parsedUrl = parseGitHubUrl(repoUrl);
+      if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo) {
+        setSuggestedQuestions(null);
+        setSuggestionsError("Enter a valid GitHub URL to see suggestions.");
+        return;
+      }
+
+      setIsLoadingSuggestions(true);
+      setSuggestionsError(null);
+      setSuggestedQuestions(null); // Clear previous suggestions
+
+      startTransition(async () => {
+        const result = await getSuggestedQuestions(parsedUrl.owner!, parsedUrl.repo!);
+        if (result.error) {
+          setSuggestionsError(`Could not fetch suggestions: ${result.error}`);
+          setSuggestedQuestions(null);
+        } else if (result.data?.questions && result.data.questions.length > 0) {
+          setSuggestedQuestions(result.data.questions);
+        } else {
+          setSuggestedQuestions([]); // No questions returned
+        }
+        setIsLoadingSuggestions(false);
+      });
+    };
+
+    // Debounce fetching suggestions
+    const debounceTimeout = setTimeout(() => {
+      fetchSuggestions();
+    }, 500); // Adjust debounce time as needed (e.g., 500ms)
+
+    return () => clearTimeout(debounceTimeout);
+  }, [repoUrl]);
+
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -55,7 +101,6 @@ export default function GitQueryClient() {
       setIsLoadingData(true);
 
       try {
-        // Fetch Commits
         setLoadingStatus("Fetching commits...");
         const commitCacheKey = `commits_${owner}_${repo}`;
         const cachedCommits = sessionStorage.getItem(commitCacheKey);
@@ -71,7 +116,6 @@ export default function GitQueryClient() {
           if (commitDataString) sessionStorage.setItem(commitCacheKey, commitDataString);
         }
 
-        // Fetch Issues
         setLoadingStatus("Fetching open issues...");
         const issuesCacheKey = `issues_${owner}_${repo}`;
         const cachedIssues = sessionStorage.getItem(issuesCacheKey);
@@ -87,7 +131,6 @@ export default function GitQueryClient() {
           if (issuesDataString) sessionStorage.setItem(issuesCacheKey, issuesDataString);
         }
 
-        // Fetch Pull Requests
         setLoadingStatus("Fetching open pull requests...");
         const prCacheKey = `prs_${owner}_${repo}`;
         const cachedPRs = sessionStorage.getItem(prCacheKey);
@@ -144,6 +187,10 @@ export default function GitQueryClient() {
     });
   };
 
+  const handleSuggestedQuestionClick = (suggestedQuery: string) => {
+    setQuery(suggestedQuery);
+  };
+
   const isLoading = isLoadingData || isLoadingAI || isPending;
 
   return (
@@ -159,7 +206,7 @@ export default function GitQueryClient() {
         <CardHeader>
           <CardTitle className="font-headline text-2xl flex items-center">
             <Github className="mr-2 h-6 w-6 text-primary" />
-            Query Repository
+            Explore Repository
           </CardTitle>
           <CardDescription>
             Enter a public GitHub repository URL and ask about its history, issues, or pull requests.
@@ -175,12 +222,63 @@ export default function GitQueryClient() {
                 id="repoUrl"
                 type="text"
                 value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
+                onChange={(e) => {
+                  setRepoUrl(e.target.value);
+                  // Clear AI response and main error when URL changes
+                  setAiResponse(null);
+                  setError(null);
+                }}
                 placeholder="e.g., https://github.com/facebook/react or vercel/next.js"
                 disabled={isLoading}
                 className="text-base"
               />
             </div>
+
+            {isLoadingSuggestions && (
+              <div className="flex items-center text-sm text-muted-foreground py-2">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Fetching suggestions...
+              </div>
+            )}
+
+            {suggestionsError && !isLoadingSuggestions && (
+               <Alert variant="default" className="my-4">
+                 <MessageSquareQuote className="h-5 w-5" />
+                 <AlertTitle>Suggestions</AlertTitle>
+                 <AlertDescription>{suggestionsError}</AlertDescription>
+               </Alert>
+            )}
+
+            {suggestedQuestions && suggestedQuestions.length > 0 && !isLoadingSuggestions && (
+              <div className="py-2 space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground flex items-center">
+                  <MessageSquareQuote className="mr-2 h-4 w-4" />
+                  Suggested Questions:
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {suggestedQuestions.map((q, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSuggestedQuestionClick(q)}
+                      disabled={isLoading}
+                      className="text-xs"
+                    >
+                      {q}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+             {suggestedQuestions && suggestedQuestions.length === 0 && !isLoadingSuggestions && !suggestionsError && (
+                <div className="py-2 text-sm text-muted-foreground">
+                    <MessageSquareQuote className="inline mr-2 h-4 w-4" />
+                    No specific suggestions found for this repository. Try asking a general question!
+                </div>
+            )}
+
+
             <div>
               <label htmlFor="query" className="block text-sm font-medium mb-1">
                 Your Question
@@ -201,7 +299,7 @@ export default function GitQueryClient() {
               ) : (
                 <Send className="mr-2 h-5 w-5" />
               )}
-              {isLoadingData ? loadingStatus : isLoadingAI ? "Thinking..." : "Ask GitQuery"}
+              {isLoadingData ? loadingStatus : isLoadingAI ? "Thinking..." : "Ask GitProse"}
             </Button>
           </form>
         </CardContent>

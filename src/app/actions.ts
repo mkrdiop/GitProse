@@ -2,6 +2,7 @@
 "use server";
 
 import { answerGithubQuery, type AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
+import { suggestRepoInsights, type SuggestRepoInsightsOutput } from "@/ai/flows/suggest-repo-insights";
 
 const GITHUB_API_BASE_URL = "https://api.github.com";
 
@@ -192,4 +193,27 @@ export async function getAIResponse(
   }
 }
 
+interface GetSuggestedQuestionsResult {
+  data?: SuggestRepoInsightsOutput;
+  error?: string;
+}
+
+export async function getSuggestedQuestions(
+  owner: string,
+  repo: string
+): Promise<GetSuggestedQuestionsResult> {
+  if (!owner || !repo) {
+    return { error: "Owner and repository name are required for suggestions." };
+  }
+  try {
+    const suggestions = await suggestRepoInsights({ ownerName: owner, repoName: repo });
+    return { data: suggestions };
+  } catch (error) {
+    console.error("Error getting suggested questions:", error);
+    const errorMessage = (typeof error === 'object' && error !== null && 'message' in error)
+                         ? String((error as {message: string}).message)
+                         : "An unexpected error occurred while fetching suggestions.";
+    return { error: errorMessage };
+  }
+}
     
