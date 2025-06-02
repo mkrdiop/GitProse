@@ -21,7 +21,7 @@ export type AnswerGithubQueryInput = z.infer<typeof AnswerGithubQueryInputSchema
 
 const AnswerGithubQueryOutputSchema = z.object({
   answer: z.string().describe('The LLM-generated answer to the query.'),
-  relevantLinks: z.array(z.string().url()).describe('An array of direct links to relevant commits, issues, or pull requests on GitHub.'),
+  relevantLinks: z.array(z.string()).describe('An array of direct links to relevant commits, issues, or pull requests on GitHub.'),
 });
 export type AnswerGithubQueryOutput = z.infer<typeof AnswerGithubQueryOutputSchema>;
 
