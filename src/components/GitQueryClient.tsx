@@ -43,12 +43,11 @@ export default function GitQueryClient() {
       }
 
       const parsedUrl = parseRepositoryUrl(repoUrl);
-      if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo || parsedUrl.source !== 'github') {
+      // Suggestions are currently more tailored for GitHub, but can be tried for GitLab
+      if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo ) { // removed || parsedUrl.source !== 'github'
         setSuggestedQuestions(null);
-        if (parsedUrl.source === 'gitlab') {
-          setSuggestionsError("GitLab URL recognized. Suggestions are currently for GitHub repos.");
-        } else if (repoUrl.trim() !== "" && parsedUrl.error) {
-           setSuggestionsError("Enter a valid GitHub URL to see suggestions.");
+        if (repoUrl.trim() !== "" && parsedUrl.error) {
+           setSuggestionsError("Enter a valid GitHub or GitLab URL to see suggestions.");
         } else {
           setSuggestionsError(null);
         }
@@ -61,7 +60,8 @@ export default function GitQueryClient() {
       setSuggestedQuestions(null);
 
       startTransition(async () => {
-        const result = await getSuggestedQuestions(parsedUrl.owner!, parsedUrl.repo!);
+        // Pass source to getSuggestedQuestions
+        const result = await getSuggestedQuestions(parsedUrl.owner!, parsedUrl.repo!, parsedUrl.source);
         if (result.error) {
           setSuggestionsError(`Could not fetch suggestions: ${result.error}`);
           setSuggestedQuestions(null);
@@ -103,34 +103,26 @@ export default function GitQueryClient() {
       setError(parsedUrl.error || "Invalid repository URL.");
       return;
     }
-
-    if (parsedUrl.source === 'gitlab') {
-      setError("GitLab URL recognized. Full GitLab support is under development. Currently, only GitHub repositories can be processed.");
+    
+    if (parsedUrl.source === 'invalid') {
+      setError("Invalid repository URL. Please use a GitHub or GitLab URL format.");
       setAiResponse(null);
       setDiffExplanation(null);
       return;
     }
 
-    if (parsedUrl.source !== 'github') {
-      setError("Invalid repository URL or unsupported Git provider. Please use a GitHub URL.");
-      setAiResponse(null);
-      setDiffExplanation(null);
-      return;
-    }
+    const { owner, repo, source } = parsedUrl;
 
-    const { owner, repo } = parsedUrl;
-
-    // Check for semantic diff query
     const explainCommitRegex = /^explain commit\s+([0-9a-fA-F]{7,40})\s*$/i;
     const explainMatch = query.trim().match(explainCommitRegex);
 
     if (explainMatch) {
       const commitSha = explainMatch[1];
-      console.log("GitProse Event: Semantic Diff Query Submitted", { commitSha, repository: repoUrl.trim() });
+      console.log(`GitProse Event: Semantic Diff Query Submitted for ${source}`, { commitSha, repository: repoUrl.trim() });
       setIsLoadingAI(true);
       startTransition(async () => {
         try {
-          const explanationResult = await getCommitDiffExplanation(owner, repo, commitSha);
+          const explanationResult = await getCommitDiffExplanation(owner, repo, commitSha, source);
           if (explanationResult.error) {
             setError(`Error explaining commit diff: ${explanationResult.error}`);
           } else {
@@ -144,27 +136,26 @@ export default function GitQueryClient() {
         }
         setIsLoadingAI(false);
       });
-      return; // End here for semantic diff query
+      return; 
     }
 
-    // Regular query processing
-    console.log("GitProse Event: Query Submitted", { query: query.trim(), repository: repoUrl.trim() });
+    console.log(`GitProse Event: Query Submitted for ${source}`, { query: query.trim(), repository: repoUrl.trim() });
 
     startTransition(async () => {
       let commitDataString: string | undefined;
       let issuesDataString: string | undefined;
-      let prDataString: string | undefined;
+      let prDataString: string | undefined; // For GitLab, this will be Merge Requests
 
       setIsLoadingData(true);
 
       try {
-        setLoadingStatus("Fetching commits...");
-        const commitCacheKey = `commits_${owner}_${repo}`;
+        setLoadingStatus(`Fetching commits from ${source}...`);
+        const commitCacheKey = `commits_${owner}_${repo}_${source}`;
         const cachedCommits = sessionStorage.getItem(commitCacheKey);
         if (cachedCommits) {
           commitDataString = cachedCommits;
         } else {
-          const commitResult = await fetchCommitsForRepo(owner, repo);
+          const commitResult = await fetchCommitsForRepo(owner, repo, source);
           if (commitResult.error) {
             setError(`Error fetching commit data: ${commitResult.error}`);
             setIsLoadingData(false); return;
@@ -173,13 +164,13 @@ export default function GitQueryClient() {
           if (commitDataString) sessionStorage.setItem(commitCacheKey, commitDataString);
         }
 
-        setLoadingStatus("Fetching open issues...");
-        const issuesCacheKey = `issues_${owner}_${repo}`;
+        setLoadingStatus(`Fetching open issues from ${source}...`);
+        const issuesCacheKey = `issues_${owner}_${repo}_${source}`;
         const cachedIssues = sessionStorage.getItem(issuesCacheKey);
         if (cachedIssues) {
           issuesDataString = cachedIssues;
         } else {
-          const issuesResult = await fetchOpenIssuesForRepo(owner, repo);
+          const issuesResult = await fetchOpenIssuesForRepo(owner, repo, source);
           if (issuesResult.error) {
             setError(`Error fetching issue data: ${issuesResult.error}`);
             setIsLoadingData(false); return;
@@ -187,16 +178,18 @@ export default function GitQueryClient() {
           issuesDataString = issuesResult.dataString;
           if (issuesDataString) sessionStorage.setItem(issuesCacheKey, issuesDataString);
         }
-
-        setLoadingStatus("Fetching open pull requests...");
-        const prCacheKey = `prs_${owner}_${repo}`;
+        
+        const prLabel = source === 'gitlab' ? 'merge requests' : 'pull requests';
+        setLoadingStatus(`Fetching open ${prLabel} from ${source}...`);
+        const prCacheKey = `prs_${owner}_${repo}_${source}`; // "prs" used for both for cache key simplicity
         const cachedPRs = sessionStorage.getItem(prCacheKey);
         if (cachedPRs) {
           prDataString = cachedPRs;
         } else {
-          const prResult = await fetchOpenPullRequestsForRepo(owner, repo);
+          // fetchOpenPullRequestsForRepo now handles source and fetches MRs for GitLab
+          const prResult = await fetchOpenPullRequestsForRepo(owner, repo, source);
           if (prResult.error) {
-            setError(`Error fetching pull request data: ${prResult.error}`);
+            setError(`Error fetching ${prLabel} data: ${prResult.error}`);
             setIsLoadingData(false); return;
           }
           prDataString = prResult.dataString;
@@ -204,7 +197,7 @@ export default function GitQueryClient() {
         }
 
       } catch (e: any) {
-        setError(`Failed to process repository data: ${e.message}`);
+        setError(`Failed to process repository data from ${source}: ${e.message}`);
         setIsLoadingData(false);
         return;
       }
@@ -218,12 +211,16 @@ export default function GitQueryClient() {
       if (issuesDataString && issuesDataString.trim() !== "") {
         combinedRelevantData += `ISSUES:\n${issuesDataString}\n\n`;
       }
+      // For GitLab, prDataString contains Merge Requests, but the AI prompt expects "PULL REQUESTS:"
+      // So we label it as "PULL REQUESTS:" for the AI, even if it's from GitLab.
+      // The AI flow (answerGithubQuery) is currently generic enough to handle this if the content format is similar.
       if (prDataString && prDataString.trim() !== "") {
         combinedRelevantData += `PULL REQUESTS:\n${prDataString}\n`;
       }
 
+
       if (combinedRelevantData.trim() === "") {
-        combinedRelevantData = "No specific data (commits, issues, or pull requests) could be retrieved for the repository. The AI will attempt to answer based on general knowledge if possible.";
+        combinedRelevantData = `No specific data (commits, issues, or pull/merge requests) could be retrieved for the ${source} repository. The AI will attempt to answer based on general knowledge if possible.`;
       }
 
       setIsLoadingAI(true);
@@ -256,7 +253,7 @@ export default function GitQueryClient() {
       <header className="mb-12 text-center">
         <h1 className="font-headline text-5xl font-bold mb-2 text-primary">GitProse</h1>
         <p className="text-xl text-muted-foreground">
-          Explore GitHub repositories with natural language. Ask about commits, issues, and PRs!
+          Explore GitHub & GitLab repositories with natural language. Ask about commits, issues, and PRs/MRs!
         </p>
         <div className="mt-4 flex flex-wrap justify-center items-center gap-x-4 gap-y-2">
             <NextLink href="/how-it-works" className="inline-flex items-center text-sm text-primary hover:underline">
@@ -273,7 +270,7 @@ export default function GitQueryClient() {
       <Card className="mb-8 shadow-xl">
         <CardHeader>
           <CardTitle className="font-headline text-2xl flex items-center">
-            <Github className="mr-2 h-6 w-6 text-primary" />
+            <Github className="mr-2 h-6 w-6 text-primary" /> {/* Consider a more generic icon or conditional icon later */}
             Explore Repository
           </CardTitle>
           <CardDescription>
@@ -296,6 +293,8 @@ export default function GitQueryClient() {
                   setAiResponse(null);
                   setDiffExplanation(null);
                   setError(null);
+                  // No longer setting suggestionsError to "GitLab URL recognized..." here.
+                  // Suggestions will be attempted for GitLab URLs too.
                 }}
                 placeholder="e.g., https://github.com/facebook/react or https://gitlab.com/gitlab-org/gitlab"
                 disabled={isLoading}
@@ -322,7 +321,7 @@ export default function GitQueryClient() {
               <div className="py-2 space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground flex items-center">
                   <MessageSquareQuote className="mr-2 h-4 w-4" />
-                  Suggested Questions (for GitHub repos):
+                  Suggested Questions:
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {suggestedQuestions.map((q, index) => (
@@ -413,7 +412,7 @@ export default function GitQueryClient() {
             )}
           </CardContent>
           <CardFooter>
-             <CardDescription>AI-generated answer based on repository data (commits, issues, PRs).</CardDescription>
+             <CardDescription>AI-generated answer based on repository data.</CardDescription>
           </CardFooter>
         </Card>
       )}
@@ -436,4 +435,3 @@ export default function GitQueryClient() {
     </div>
   );
 }
-
