@@ -11,7 +11,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse, getSuggestedQuestions } from "@/app/actions";
 import { parseRepositoryUrl, type ParsedRepositoryUrl } from "@/lib/repositoryUtils";
 import type { AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
-import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote } from "lucide-react";
+import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote, HelpCircle } from "lucide-react";
+import NextLink from "next/link";
 
 export default function GitQueryClient() {
   const [repoUrl, setRepoUrl] = useState<string>("");
@@ -218,8 +219,12 @@ export default function GitQueryClient() {
       <header className="mb-12 text-center">
         <h1 className="font-headline text-5xl font-bold mb-2 text-primary">GitProse</h1>
         <p className="text-xl text-muted-foreground">
-          Explore GitHub and GitLab repositories with natural language. Ask about commits, issues, and PRs!
+          Explore GitHub repositories with natural language. Ask about commits, issues, and PRs!
         </p>
+        <NextLink href="/how-it-works" className="mt-3 inline-flex items-center text-sm text-primary hover:underline">
+          <HelpCircle className="mr-1.5 h-4 w-4" />
+          Learn how GitProse works
+        </NextLink>
       </header>
 
       <Card className="mb-8 shadow-xl">
