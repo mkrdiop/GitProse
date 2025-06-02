@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRepo, getAIResponse, getSuggestedQuestions } from "@/app/actions";
-import { parseGitHubUrl, type ParsedGitHubUrl } from "@/lib/githubUtils";
+import { parseRepositoryUrl, type ParsedRepositoryUrl } from "@/lib/repositoryUtils"; // Updated import
 import type { AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
 import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote } from "lucide-react";
 
@@ -34,19 +34,27 @@ export default function GitQueryClient() {
       if (!repoUrl.trim()) {
         setSuggestedQuestions(null);
         setSuggestionsError(null);
+        setIsLoadingSuggestions(false);
         return;
       }
 
-      const parsedUrl = parseGitHubUrl(repoUrl);
-      if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo) {
+      const parsedUrl = parseRepositoryUrl(repoUrl);
+      if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo || parsedUrl.source !== 'github') {
         setSuggestedQuestions(null);
-        setSuggestionsError("Enter a valid GitHub URL to see suggestions.");
+        if (parsedUrl.source === 'gitlab') {
+          setSuggestionsError("GitLab URL recognized. Suggestions are currently for GitHub repos.");
+        } else if (repoUrl.trim() !== "" && parsedUrl.error) {
+           setSuggestionsError("Enter a valid GitHub URL to see suggestions.");
+        } else {
+          setSuggestionsError(null);
+        }
+        setIsLoadingSuggestions(false);
         return;
       }
 
       setIsLoadingSuggestions(true);
       setSuggestionsError(null);
-      setSuggestedQuestions(null); // Clear previous suggestions
+      setSuggestedQuestions(null); 
 
       startTransition(async () => {
         const result = await getSuggestedQuestions(parsedUrl.owner!, parsedUrl.repo!);
@@ -56,16 +64,15 @@ export default function GitQueryClient() {
         } else if (result.data?.questions && result.data.questions.length > 0) {
           setSuggestedQuestions(result.data.questions);
         } else {
-          setSuggestedQuestions([]); // No questions returned
+          setSuggestedQuestions([]); 
         }
         setIsLoadingSuggestions(false);
       });
     };
 
-    // Debounce fetching suggestions
     const debounceTimeout = setTimeout(() => {
       fetchSuggestions();
-    }, 500); // Adjust debounce time as needed (e.g., 500ms)
+    }, 500); 
 
     return () => clearTimeout(debounceTimeout);
   }, [repoUrl]);
@@ -78,7 +85,7 @@ export default function GitQueryClient() {
     setLoadingStatus("");
 
     if (!repoUrl.trim()) {
-      setError("Please enter a GitHub repository URL.");
+      setError("Please enter a repository URL.");
       return;
     }
     if (!query.trim()) {
@@ -87,9 +94,21 @@ export default function GitQueryClient() {
     }
 
     startTransition(async () => {
-      const parsedUrl: ParsedGitHubUrl = parseGitHubUrl(repoUrl);
+      const parsedUrl: ParsedRepositoryUrl = parseRepositoryUrl(repoUrl);
       if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo) {
-        setError(parsedUrl.error || "Invalid GitHub repository URL.");
+        setError(parsedUrl.error || "Invalid repository URL.");
+        return;
+      }
+
+      if (parsedUrl.source === 'gitlab') {
+        setError("GitLab URL recognized. Full GitLab support is under development. Currently, only GitHub repositories can be processed.");
+        setAiResponse(null);
+        return;
+      }
+      
+      if (parsedUrl.source !== 'github') {
+        setError("Invalid repository URL or unsupported Git provider. Please use a GitHub URL.");
+        setAiResponse(null);
         return;
       }
 
@@ -171,6 +190,7 @@ export default function GitQueryClient() {
       
       setIsLoadingAI(true);
       try {
+        // Pass the original full repoUrl, as the AI prompt expects it.
         const aiResult = await getAIResponse(repoUrl, query, combinedRelevantData);
         if (aiResult.error) {
           setError(`AI processing error: ${aiResult.error}`);
@@ -209,14 +229,14 @@ export default function GitQueryClient() {
             Explore Repository
           </CardTitle>
           <CardDescription>
-            Enter a public GitHub repository URL and ask about its history, issues, or pull requests.
+            Enter a public GitHub or GitLab repository URL and ask about its history, issues, or pull requests.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="repoUrl" className="block text-sm font-medium mb-1">
-                GitHub Repository URL
+                Repository URL (GitHub or GitLab)
               </label>
               <Input
                 id="repoUrl"
@@ -224,11 +244,10 @@ export default function GitQueryClient() {
                 value={repoUrl}
                 onChange={(e) => {
                   setRepoUrl(e.target.value);
-                  // Clear AI response and main error when URL changes
                   setAiResponse(null);
                   setError(null);
                 }}
-                placeholder="e.g., https://github.com/facebook/react or vercel/next.js"
+                placeholder="e.g., https://github.com/facebook/react or https://gitlab.com/gitlab-org/gitlab"
                 disabled={isLoading}
                 className="text-base"
               />
@@ -253,7 +272,7 @@ export default function GitQueryClient() {
               <div className="py-2 space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground flex items-center">
                   <MessageSquareQuote className="mr-2 h-4 w-4" />
-                  Suggested Questions:
+                  Suggested Questions (for GitHub repos):
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {suggestedQuestions.map((q, index) => (
@@ -293,7 +312,7 @@ export default function GitQueryClient() {
                 className="text-base"
               />
             </div>
-            <Button type="submit" disabled={isLoading} className="w-full sm:w-auto text-base py-3 px-6">
+            <Button type="submit" disabled={isLoading || !query.trim() || !repoUrl.trim()} className="w-full sm:w-auto text-base py-3 px-6">
               {isLoading ? (
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
@@ -349,5 +368,3 @@ export default function GitQueryClient() {
     </div>
   );
 }
-
-    
