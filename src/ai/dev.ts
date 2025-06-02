@@ -1,1 +1,6 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/generate-commit-summary.ts';
+import '@/ai/flows/suggest-repo-insights.ts';
+import '@/ai/flows/answer-github-query.ts';
