@@ -43,12 +43,16 @@ interface SimplifiedPullRequestInfo {
 }
 
 async function fetchDataFromGitHub(url: string, dataTypeName: string): Promise<any[]> {
+  const headers: HeadersInit = {
+    Accept: "application/vnd.github.v3+json",
+  };
+
+  if (process.env.GITHUB_PAT) {
+    headers["Authorization"] = `token ${process.env.GITHUB_PAT}`;
+  }
+
   const response = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github.v3+json",
-      // Add a GitHub Personal Access Token here for higher rate limits if needed
-      // "Authorization": `token YOUR_GITHUB_PAT`
-    },
+    headers: headers,
     next: {
       revalidate: 3600 // Revalidate every 1 hour
     }
@@ -56,8 +60,15 @@ async function fetchDataFromGitHub(url: string, dataTypeName: string): Promise<a
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: `Failed to fetch ${dataTypeName}` }));
+    let errorMessage = `Failed to fetch ${dataTypeName} from GitHub (${response.status}): ${errorData.message || 'Unknown error'}`;
+    if (response.status === 403 && errorData.message && errorData.message.includes('API rate limit exceeded')) {
+      errorMessage += " (But here's the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)";
+      if (!process.env.GITHUB_PAT) {
+        errorMessage += " Consider adding a GITHUB_PAT environment variable.";
+      }
+    }
     console.error(`GitHub API error for ${dataTypeName} (${response.status}): ${errorData.message}`);
-    throw new Error(`Failed to fetch ${dataTypeName} from GitHub (${response.status}): ${errorData.message || 'Unknown error'}`);
+    throw new Error(errorMessage);
   }
   return response.json();
 }
