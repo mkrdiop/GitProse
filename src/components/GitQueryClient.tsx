@@ -218,7 +218,7 @@ export default function GitQueryClient() {
       <header className="mb-12 text-center">
         <h1 className="font-headline text-5xl font-bold mb-2 text-primary">GitProse</h1>
         <p className="text-xl text-muted-foreground">
-          Explore GitHub repositories with natural language. Ask about commits, issues, and PRs!
+          Explore GitHub and GitLab repositories with natural language. Ask about commits, issues, and PRs!
         </p>
       </header>
 
