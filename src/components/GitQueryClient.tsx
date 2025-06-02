@@ -149,7 +149,7 @@ export default function GitQueryClient() {
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-3xl">
       <header className="mb-12 text-center">
-        <h1 className="font-headline text-5xl font-bold mb-2 text-primary">GitQuery</h1>
+        <h1 className="font-headline text-5xl font-bold mb-2 text-primary">GitProse</h1>
         <p className="text-xl text-muted-foreground">
           Explore GitHub repositories with natural language. Ask about commits, issues, and PRs!
         </p>

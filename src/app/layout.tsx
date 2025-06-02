@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'GitQuery',
+  title: 'GitProse',
   description: 'Explore GitHub repositories with natural language.',
 };
 
