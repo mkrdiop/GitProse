@@ -95,6 +95,8 @@ export default function GitQueryClient() {
       return;
     }
 
+    console.log("GitProse Event: Query Submitted", { query: query.trim(), repository: repoUrl.trim() });
+
     startTransition(async () => {
       const parsedUrl: ParsedRepositoryUrl = parseRepositoryUrl(repoUrl);
       if (parsedUrl.error || !parsedUrl.owner || !parsedUrl.repo) {
@@ -209,6 +211,7 @@ export default function GitQueryClient() {
   };
 
   const handleSuggestedQuestionClick = (suggestedQuery: string) => {
+    console.log("GitProse Event: Suggested Question Clicked", { suggestedQuery });
     setQuery(suggestedQuery);
   };
 
