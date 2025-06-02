@@ -12,7 +12,7 @@ import { fetchCommitsForRepo, fetchOpenIssuesForRepo, fetchOpenPullRequestsForRe
 import { parseRepositoryUrl, type ParsedRepositoryUrl } from "@/lib/repositoryUtils";
 import type { AnswerGithubQueryOutput } from "@/ai/flows/answer-github-query";
 import type { ExplainCommitDiffOutput } from "@/ai/flows/explain-commit-diff";
-import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote, HelpCircle } from "lucide-react";
+import { Github, Send, Link as LinkIcon, Loader2, AlertCircle, MessageSquareQuote, HelpCircle, ListTree } from "lucide-react";
 import NextLink from "next/link";
 
 export default function GitQueryClient() {
@@ -258,10 +258,16 @@ export default function GitQueryClient() {
         <p className="text-xl text-muted-foreground">
           Explore GitHub repositories with natural language. Ask about commits, issues, and PRs!
         </p>
-        <NextLink href="/how-it-works" className="mt-3 inline-flex items-center text-sm text-primary hover:underline">
-          <HelpCircle className="mr-1.5 h-4 w-4" />
-          Learn how GitProse works
-        </NextLink>
+        <div className="mt-4 flex flex-wrap justify-center items-center gap-x-4 gap-y-2">
+            <NextLink href="/how-it-works" className="inline-flex items-center text-sm text-primary hover:underline">
+                <HelpCircle className="mr-1.5 h-4 w-4" />
+                Learn how GitProse works
+            </NextLink>
+            <NextLink href="/use-cases" className="inline-flex items-center text-sm text-primary hover:underline">
+                <ListTree className="mr-1.5 h-4 w-4" />
+                See Use Cases & Examples
+            </NextLink>
+        </div>
       </header>
 
       <Card className="mb-8 shadow-xl">
