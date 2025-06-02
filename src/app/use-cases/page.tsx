@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Zap, Users, Code, SearchCheck, History, Lightbulb } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: 'GitProse Use Cases & Examples',
